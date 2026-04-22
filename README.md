@@ -17,6 +17,16 @@ Small Windows desktop monitor for live network traffic and active TCP connection
 - `Start_Network_Monitor.bat`: launcher
 - `scripts/NetworkMonitor.ps1`: main app
 
+## Code Layout
+
+- `script-scope state`: caches, selected display unit, min/max stats, saved grid sort state, and the last sample used by the timer-driven refresh loop
+- `Get-ActiveInterfaceRows`: reads active adapter counters from Windows
+- `Update-AdapterGrid`: converts adapter counters into current rates and rebuilds the adapter table
+- `Update-ConnectionsGrid`: rebuilds the active TCP connections table
+- `Refresh-Monitor`: main sampling pass that computes current/min/max values and refreshes the UI
+- `ColumnHeaderMouseClick` handlers: keep user-selected sorting active across refreshes
+- `unitToggleButton` handler: switches between `Mbps` and `MBps` without changing the internal sampled values
+
 ## Run
 
 ```powershell

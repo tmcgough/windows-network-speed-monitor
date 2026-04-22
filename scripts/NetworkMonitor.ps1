@@ -7,6 +7,8 @@ Add-Type -AssemblyName System.Drawing
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
+# Script-scope state is used so the timer tick, button click handlers, and
+# grid callbacks can all read/write the same live monitor data.
 $script:hostCache = @{}
 $script:processCache = @{}
 $script:displayUnit = "Mbps"
@@ -30,6 +32,8 @@ $script:gridSortState = @{
 }
 $script:lastDisplayState = $null
 $script:lastAdapterRows = @()
+# Ignore adapters that either are not real network paths for user traffic or
+# tend to add noise to the dashboard.
 $script:adapterPatternsToIgnore = @(
     '^Loopback',
     'isatap',
@@ -54,6 +58,8 @@ function Convert-ToMBps {
 function Get-SpeedDisplayValue {
     param([double]$BytesPerSecond)
 
+    # The monitor always samples in bytes/second internally, then converts only
+    # for display so unit toggling does not affect stored stats.
     if ($script:displayUnit -eq "MBps") {
         return Convert-ToMBps -BytesPerSecond $BytesPerSecond
     }
@@ -93,6 +99,9 @@ function Get-ActiveInterfaceRows {
             continue
         }
 
+        # Get-NetAdapterStatistics can return entries that are not currently up.
+        # Pair the byte counters with the adapter status so the dashboard only
+        # shows adapters that are actively available.
         $linkSpeedText = ""
         try {
             $adapter = Get-NetAdapter -Name $stat.Name -ErrorAction Stop
@@ -128,6 +137,8 @@ function Get-ResolvedHost {
         return $script:hostCache[$IpAddress]
     }
 
+    # Reverse DNS can be slow or unavailable. Cache both hits and misses so the
+    # connections grid does not repeatedly block on the same remote address.
     $result = ""
     try {
         $entry = [System.Net.Dns]::GetHostEntry($IpAddress)
@@ -154,6 +165,8 @@ function Get-ProcessNameCached {
         return $script:processCache[$ProcessId]
     }
 
+    # Process lookup is repeated across refreshes, so cache the friendly name
+    # by PID until the app closes.
     $name = ""
     try {
         $name = (Get-Process -Id $ProcessId -ErrorAction Stop).ProcessName
@@ -202,6 +215,8 @@ function Apply-GridSort {
 
     $sortColumnName = $State.Column
     if ($Grid.Name -eq "adapterGrid") {
+        # Speed columns are displayed as formatted text, so the adapter table
+        # keeps hidden numeric columns for accurate sorting.
         switch ($State.Column) {
             "Incoming" { $sortColumnName = "IncomingValue" }
             "Outgoing" { $sortColumnName = "OutgoingValue" }
@@ -300,6 +315,8 @@ $script:previousSample = $null
 function Update-AdapterGrid {
     param($Rows, [double]$IntervalSeconds)
 
+    # Rebuild a fresh table each refresh. This keeps the grid simple, and the
+    # saved sort state is reapplied immediately after rebinding.
     $table = New-Object System.Data.DataTable
     [void]$table.Columns.Add("Adapter", [string])
     [void]$table.Columns.Add("Incoming", [string])
@@ -315,6 +332,8 @@ function Update-AdapterGrid {
         $outgoingValue = 0.0
 
         if ($script:previousSample -and $script:previousSample.ContainsKey($row.Name)) {
+            # Adapter statistics are cumulative counters. Current rate is the
+            # delta between the latest and previous sample divided by the refresh interval.
             $previous = $script:previousSample[$row.Name]
             $incomingRate = [math]::Max(0.0, ($row.ReceivedBytes - $previous.ReceivedBytes) / $IntervalSeconds)
             $outgoingRate = [math]::Max(0.0, ($row.SentBytes - $previous.SentBytes) / $IntervalSeconds)
@@ -328,6 +347,8 @@ function Update-AdapterGrid {
     }
 
     $adapterGrid.DataSource = $table
+    # Hidden numeric columns back the visible formatted text columns so sorting
+    # stays numeric in both Mbps and MBps modes.
     $adapterGrid.Columns["IncomingValue"].Visible = $false
     $adapterGrid.Columns["OutgoingValue"].Visible = $false
     foreach ($column in $adapterGrid.Columns) {
@@ -337,6 +358,8 @@ function Update-AdapterGrid {
 }
 
 function Update-ConnectionsGrid {
+    # The connections table is separate from the speed sampling logic: it shows
+    # the latest established TCP connections, not traffic volume per connection.
     $table = New-Object System.Data.DataTable
     [void]$table.Columns.Add("Process", [string])
     [void]$table.Columns.Add("PID", [int])
@@ -353,6 +376,7 @@ function Update-ConnectionsGrid {
         $connections = @()
     }
 
+    # Limit the table size so refresh stays responsive even on busy systems.
     $shown = 0
     foreach ($connection in $connections) {
         if ($connection.RemoteAddress -in @("127.0.0.1", "::1", "0.0.0.0", "::")) {
@@ -390,6 +414,8 @@ function Update-DisplayLabels {
         return
     }
 
+    # All labels are derived from the most recent computed sample so a unit
+    # toggle can redraw text instantly without waiting for the next timer tick.
     $state = $script:lastDisplayState
     $unitLabel.Text = "Display Unit: $($script:displayUnit)"
     $unitToggleButton.Text = if ($script:displayUnit -eq "Mbps") { "Use MBps" } else { "Use Mbps" }
@@ -426,6 +452,8 @@ function Refresh-Monitor {
     }
 
     if (-not $script:previousSample) {
+        # The first refresh establishes the baseline counters. A speed value is
+        # only meaningful once we have two samples to compare.
         $script:previousSample = $currentMap
         $statusLabel.Text = "Collecting baseline..."
         Update-AdapterGrid -Rows $rows -IntervalSeconds $RefreshSeconds
@@ -444,6 +472,8 @@ function Refresh-Monitor {
 
         if ($script:previousSample.ContainsKey($row.Name)) {
             $previous = $script:previousSample[$row.Name]
+            # Clamp negative deltas to zero in case an adapter resets its
+            # counters or briefly disappears between samples.
             $receivedDelta += [math]::Max(0.0, ($row.ReceivedBytes - $previous.ReceivedBytes) / $RefreshSeconds)
             $sentDelta += [math]::Max(0.0, ($row.SentBytes - $previous.SentBytes) / $RefreshSeconds)
         }
@@ -488,6 +518,8 @@ function Refresh-Monitor {
     Update-AdapterGrid -Rows $rows -IntervalSeconds $RefreshSeconds
     Update-ConnectionsGrid
 
+    # Store the full current sample so the next timer tick can compute rates
+    # from cumulative adapter byte counters.
     $script:previousSample = $currentMap
 }
 
@@ -500,6 +532,8 @@ $timer.Add_Tick({
 $adapterGrid.Add_ColumnHeaderMouseClick({
     param($sender, $eventArgs)
 
+    # Programmatic sorting lets the app keep user-selected sort order across
+    # data refreshes instead of losing it whenever the grid is rebound.
     $clickedColumn = $adapterGrid.Columns[$eventArgs.ColumnIndex]
     $newDirection = [System.ComponentModel.ListSortDirection]::Ascending
     if ($script:gridSortState.Adapter.Column -eq $clickedColumn.Name -and $script:gridSortState.Adapter.Direction -eq [System.ComponentModel.ListSortDirection]::Ascending) {
@@ -534,6 +568,8 @@ $connectionsGrid.Add_ColumnHeaderMouseClick({
 })
 
 $unitToggleButton.Add_Click({
+    # Unit changes only affect formatting. The underlying sampled values remain
+    # in bytes/second so min/max and sorting stay internally consistent.
     $script:displayUnit = if ($script:displayUnit -eq "Mbps") { "MBps" } else { "Mbps" }
     Update-DisplayLabels
     if ($script:lastDisplayState -and $script:lastAdapterRows.Count -gt 0) {

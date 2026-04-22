@@ -11,6 +11,7 @@ Add-Type -AssemblyName System.Drawing
 # grid callbacks can all read/write the same live monitor data.
 $script:hostCache = @{}
 $script:processCache = @{}
+$script:connectionHistory = @{}
 $script:displayUnit = "Mbps"
 $script:stats = @{
     InMin        = $null
@@ -177,6 +178,55 @@ function Get-ProcessNameCached {
 
     $script:processCache[$ProcessId] = $name
     return $name
+}
+
+function Get-ConnectionKey {
+    param($Connection)
+
+    return "{0}|{1}|{2}|{3}|{4}" -f `
+        $Connection.OwningProcess,
+        $Connection.LocalAddress,
+        $Connection.LocalPort,
+        $Connection.RemoteAddress,
+        $Connection.RemotePort
+}
+
+function Update-ConnectionHistory {
+    param($Connections, [datetime]$Timestamp)
+
+    $activeKeys = @{}
+
+    foreach ($connection in $Connections) {
+        $key = Get-ConnectionKey -Connection $connection
+        $activeKeys[$key] = $true
+
+        if (-not $script:connectionHistory.ContainsKey($key)) {
+            $script:connectionHistory[$key] = @{
+                FirstSeen = $Timestamp
+                LastSeen  = $Timestamp
+            }
+        }
+        else {
+            $script:connectionHistory[$key].LastSeen = $Timestamp
+        }
+    }
+
+    # Drop stale entries after a while so the in-memory table reflects current
+    # app usage instead of growing forever during long sessions.
+    $staleKeys = @()
+    foreach ($key in $script:connectionHistory.Keys) {
+        if ($activeKeys.ContainsKey($key)) {
+            continue
+        }
+
+        if (($Timestamp - $script:connectionHistory[$key].LastSeen).TotalMinutes -gt 30) {
+            $staleKeys += $key
+        }
+    }
+
+    foreach ($key in $staleKeys) {
+        $script:connectionHistory.Remove($key)
+    }
 }
 
 function New-Label {
@@ -358,6 +408,8 @@ function Update-AdapterGrid {
 }
 
 function Update-ConnectionsGrid {
+    param([datetime]$Timestamp)
+
     # The connections table is separate from the speed sampling logic: it shows
     # the latest established TCP connections, not traffic volume per connection.
     $table = New-Object System.Data.DataTable
@@ -367,6 +419,8 @@ function Update-ConnectionsGrid {
     [void]$table.Columns.Add("Remote IP", [string])
     [void]$table.Columns.Add("Remote Host", [string])
     [void]$table.Columns.Add("Remote Port", [int])
+    [void]$table.Columns.Add("First Seen", [datetime])
+    [void]$table.Columns.Add("Last Seen", [datetime])
 
     try {
         $connections = Get-NetTCPConnection -State Established -ErrorAction Stop |
@@ -375,6 +429,8 @@ function Update-ConnectionsGrid {
     catch {
         $connections = @()
     }
+
+    Update-ConnectionHistory -Connections $connections -Timestamp $Timestamp
 
     # Limit the table size so refresh stays responsive even on busy systems.
     $shown = 0
@@ -386,6 +442,8 @@ function Update-ConnectionsGrid {
         $processName = Get-ProcessNameCached -ProcessId $connection.OwningProcess
         $remoteHost = Get-ResolvedHost -IpAddress $connection.RemoteAddress
         $localAddress = "{0}:{1}" -f $connection.LocalAddress, $connection.LocalPort
+        $historyKey = Get-ConnectionKey -Connection $connection
+        $history = $script:connectionHistory[$historyKey]
 
         [void]$table.Rows.Add(
             $processName,
@@ -393,7 +451,9 @@ function Update-ConnectionsGrid {
             $localAddress,
             $connection.RemoteAddress,
             $remoteHost,
-            [int]$connection.RemotePort
+            [int]$connection.RemotePort,
+            [datetime]$history.FirstSeen,
+            [datetime]$history.LastSeen
         )
 
         $shown++
@@ -403,6 +463,8 @@ function Update-ConnectionsGrid {
     }
 
     $connectionsGrid.DataSource = $table
+    $connectionsGrid.Columns["First Seen"].DefaultCellStyle.Format = "yyyy-MM-dd HH:mm:ss"
+    $connectionsGrid.Columns["Last Seen"].DefaultCellStyle.Format = "yyyy-MM-dd HH:mm:ss"
     foreach ($column in $connectionsGrid.Columns) {
         $column.SortMode = [System.Windows.Forms.DataGridViewColumnSortMode]::Programmatic
     }
@@ -457,7 +519,7 @@ function Refresh-Monitor {
         $script:previousSample = $currentMap
         $statusLabel.Text = "Collecting baseline..."
         Update-AdapterGrid -Rows $rows -IntervalSeconds $RefreshSeconds
-        Update-ConnectionsGrid
+        Update-ConnectionsGrid -Timestamp $now
         return
     }
 
@@ -516,7 +578,7 @@ function Refresh-Monitor {
     Update-DisplayLabels
 
     Update-AdapterGrid -Rows $rows -IntervalSeconds $RefreshSeconds
-    Update-ConnectionsGrid
+    Update-ConnectionsGrid -Timestamp $now
 
     # Store the full current sample so the next timer tick can compute rates
     # from cumulative adapter byte counters.

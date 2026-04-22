@@ -10,7 +10,7 @@ Small Windows desktop monitor for live network traffic and active TCP connection
 - Current, minimum, and maximum rates since launch
 - Total bytes received and sent
 - Active network adapters table
-- Established TCP connections with process name, remote IP, remote port, and best-effort hostname lookup
+- Established TCP connections with process name, remote IP, remote port, best-effort hostname lookup, and first/last seen timestamps since app launch
 - Sortable tables that keep their sort order during refresh
 - Toggle between `Mbps` and `MBps`
 
@@ -25,6 +25,7 @@ Small Windows desktop monitor for live network traffic and active TCP connection
 - `Get-ActiveInterfaceRows`: reads active adapter counters from Windows
 - `Update-AdapterGrid`: converts adapter counters into current rates and rebuilds the adapter table
 - `Update-ConnectionsGrid`: rebuilds the active TCP connections table
+- `Update-ConnectionHistory`: keeps per-connection first/last seen timestamps while the app is running
 - `Refresh-Monitor`: main sampling pass that computes current/min/max values and refreshes the UI
 - `ColumnHeaderMouseClick` handlers: keep user-selected sorting active across refreshes
 - `unitToggleButton` handler: switches between `Mbps` and `MBps` without changing the internal sampled values
@@ -46,4 +47,6 @@ If PowerShell execution policy blocks the script, the launcher already uses `-Ex
 
 - Hostnames come from reverse DNS when available.
 - Exact website URLs are not available from normal Windows socket data, so the app shows remote IPs and hostnames rather than full pages.
+- First/last seen timestamps are tracked from the time this app starts, not from the operating system's historical connection log.
+- Per-destination traffic totals are not included because standard PowerShell connection cmdlets do not expose reliable byte counters for each remote endpoint.
 - The app uses built-in Windows PowerShell networking cmdlets such as `Get-NetAdapterStatistics` and `Get-NetTCPConnection`.

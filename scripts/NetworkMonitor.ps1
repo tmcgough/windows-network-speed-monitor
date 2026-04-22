@@ -298,13 +298,20 @@ $outLabel = New-Label -Text "Outgoing" -X 310 -Y 90 -Width 200 -Height 20 -Bold 
 $combinedLabel = New-Label -Text "Combined" -X 600 -Y 90 -Width 200 -Height 20 -Bold $true
 $statusLabel = New-Label -Text "Sampling..." -X 900 -Y 20 -Width 240 -Height 20
 $noteLabel = New-Label -Text "Hostname is best effort from reverse DNS. Exact site/page URLs are not available from normal Windows socket data." -X 20 -Y 670 -Width 1120 -Height 40
-$unitLabel = New-Label -Text "Display Unit: Mbps" -X 900 -Y 45 -Width 150 -Height 22
+$unitLabel = New-Label -Text "Display Unit" -X 900 -Y 45 -Width 90 -Height 22
 
-$unitToggleButton = New-Object System.Windows.Forms.Button
-$unitToggleButton.Location = New-Object System.Drawing.Point(1050, 42)
-$unitToggleButton.Size = New-Object System.Drawing.Size(110, 28)
-$unitToggleButton.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-$unitToggleButton.Text = "Switch to MBps"
+$mbpsRadio = New-Object System.Windows.Forms.RadioButton
+$mbpsRadio.Location = New-Object System.Drawing.Point(990, 43)
+$mbpsRadio.Size = New-Object System.Drawing.Size(70, 24)
+$mbpsRadio.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$mbpsRadio.Text = "Mbps"
+$mbpsRadio.Checked = $true
+
+$mBpsRadio = New-Object System.Windows.Forms.RadioButton
+$mBpsRadio.Location = New-Object System.Drawing.Point(1060, 43)
+$mBpsRadio.Size = New-Object System.Drawing.Size(80, 24)
+$mBpsRadio.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$mBpsRadio.Text = "MBps"
 
 $inCurrent = New-Label -Text "Current: -" -X 20 -Y 120 -Width 240 -Height 28 -Size 12
 $inMin = New-Label -Text "Min: -" -X 20 -Y 150 -Width 240 -Height 24
@@ -352,7 +359,7 @@ $connectionsGrid.DataSource = [System.Data.DataTable]::new()
 
 foreach ($control in @(
     $title, $subtitle, $inLabel, $outLabel, $combinedLabel, $statusLabel, $noteLabel,
-    $unitLabel, $unitToggleButton,
+    $unitLabel, $mbpsRadio, $mBpsRadio,
     $inCurrent, $inMin, $inMax, $inTotal, $outCurrent, $outMin, $outMax, $outTotal,
     $combinedCurrent, $combinedMin, $combinedMax, $activeAdapters,
     $adapterTitle, $connectionsTitle, $adapterGrid, $connectionsGrid
@@ -479,8 +486,9 @@ function Update-DisplayLabels {
     # All labels are derived from the most recent computed sample so a unit
     # toggle can redraw text instantly without waiting for the next timer tick.
     $state = $script:lastDisplayState
-    $unitLabel.Text = "Display Unit: $($script:displayUnit)"
-    $unitToggleButton.Text = if ($script:displayUnit -eq "Mbps") { "Switch to MBps" } else { "Switch to Mbps" }
+    $unitLabel.Text = "Display Unit"
+    $mbpsRadio.Checked = ($script:displayUnit -eq "Mbps")
+    $mBpsRadio.Checked = ($script:displayUnit -eq "MBps")
 
     $inCurrent.Text = "Current: $(Format-SpeedText -BytesPerSecond $state.ReceivedDelta)"
     $inMin.Text = "Min: $(Format-SpeedText -BytesPerSecond $script:stats.InMin)"
@@ -629,10 +637,26 @@ $connectionsGrid.Add_ColumnHeaderMouseClick({
     Apply-GridSort -Grid $connectionsGrid -State $script:gridSortState.Connections
 })
 
-$unitToggleButton.Add_Click({
+$mbpsRadio.Add_CheckedChanged({
+    if (-not $mbpsRadio.Checked) {
+        return
+    }
+
     # Unit changes only affect formatting. The underlying sampled values remain
     # in bytes/second so min/max and sorting stay internally consistent.
-    $script:displayUnit = if ($script:displayUnit -eq "Mbps") { "MBps" } else { "Mbps" }
+    $script:displayUnit = "Mbps"
+    Update-DisplayLabels
+    if ($script:lastDisplayState -and $script:lastAdapterRows.Count -gt 0) {
+        Update-AdapterGrid -Rows $script:lastAdapterRows -IntervalSeconds $RefreshSeconds
+    }
+})
+
+$mBpsRadio.Add_CheckedChanged({
+    if (-not $mBpsRadio.Checked) {
+        return
+    }
+
+    $script:displayUnit = "MBps"
     Update-DisplayLabels
     if ($script:lastDisplayState -and $script:lastAdapterRows.Count -gt 0) {
         Update-AdapterGrid -Rows $script:lastAdapterRows -IntervalSeconds $RefreshSeconds

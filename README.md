@@ -2,6 +2,8 @@
 
 Small Windows desktop monitor for live network traffic and active TCP connections.
 
+![Windows Network Speed Monitor screenshot](assets/network-monitor-screenshot.png)
+
 ## Features
 
 - Live incoming, outgoing, and combined network speeds
@@ -34,6 +36,11 @@ Small Windows desktop monitor for live network traffic and active TCP connection
 ```
 
 If PowerShell execution policy blocks the script, the launcher already uses `-ExecutionPolicy Bypass` for this app only.
+
+## Download
+
+- Source: clone this repo and run `Start_Network_Monitor.bat`
+- Release ZIP: see the GitHub Releases page for a packaged download
 
 ## Notes
 

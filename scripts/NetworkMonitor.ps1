@@ -61,7 +61,7 @@ function Get-SpeedDisplayValue {
 
     # The monitor always samples in bytes/second internally, then converts only
     # for display so unit toggling does not affect stored stats.
-    if ($script:displayUnit -eq "MBps") {
+    if ($script:displayUnit -ceq "MBps") {
         return Convert-ToMBps -BytesPerSecond $BytesPerSecond
     }
 

@@ -302,9 +302,9 @@ $unitLabel = New-Label -Text "Display Unit: Mbps" -X 900 -Y 45 -Width 150 -Heigh
 
 $unitToggleButton = New-Object System.Windows.Forms.Button
 $unitToggleButton.Location = New-Object System.Drawing.Point(1050, 42)
-$unitToggleButton.Size = New-Object System.Drawing.Size(90, 28)
+$unitToggleButton.Size = New-Object System.Drawing.Size(110, 28)
 $unitToggleButton.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-$unitToggleButton.Text = "Use MBps"
+$unitToggleButton.Text = "Switch to MBps"
 
 $inCurrent = New-Label -Text "Current: -" -X 20 -Y 120 -Width 240 -Height 28 -Size 12
 $inMin = New-Label -Text "Min: -" -X 20 -Y 150 -Width 240 -Height 24
@@ -480,7 +480,7 @@ function Update-DisplayLabels {
     # toggle can redraw text instantly without waiting for the next timer tick.
     $state = $script:lastDisplayState
     $unitLabel.Text = "Display Unit: $($script:displayUnit)"
-    $unitToggleButton.Text = if ($script:displayUnit -eq "Mbps") { "Use MBps" } else { "Use Mbps" }
+    $unitToggleButton.Text = if ($script:displayUnit -eq "Mbps") { "Switch to MBps" } else { "Switch to Mbps" }
 
     $inCurrent.Text = "Current: $(Format-SpeedText -BytesPerSecond $state.ReceivedDelta)"
     $inMin.Text = "Min: $(Format-SpeedText -BytesPerSecond $script:stats.InMin)"
